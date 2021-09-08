@@ -2,7 +2,7 @@ package fuzzyw32registry
 
 import (
 	"errors"
-	"log"
+	"fmt"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
@@ -10,15 +10,44 @@ import (
 
 var ERR_BASE_END = errors.New("EOF")
 
+var PrefixConstMap = map[string]registry.Key{
+	"CLASSES_ROOT":     registry.CLASSES_ROOT,
+	"CURRENT_USER":     registry.CURRENT_USER,
+	"LOCAL_MACHINE":    registry.LOCAL_MACHINE,
+	"USERS":            registry.USERS,
+	"CURRENT_CONFIG":   registry.CURRENT_CONFIG,
+	"PERFORMANCE_DATA": registry.PERFORMANCE_DATA,
+	"CR":               registry.CLASSES_ROOT,
+	"CU":               registry.CURRENT_USER,
+	"LM":               registry.LOCAL_MACHINE,
+	"U":                registry.USERS,
+	"CC":               registry.CURRENT_CONFIG,
+}
+
+var ConstPrefixMap = map[registry.Key]string{
+	registry.CLASSES_ROOT:     "CLASSES_ROOT",
+	registry.CURRENT_USER:     "CURRENT_USER",
+	registry.LOCAL_MACHINE:    "LOCAL_MACHINE",
+	registry.USERS:            "USERS",
+	registry.CURRENT_CONFIG:   "CURRENT_CONFIG",
+	registry.PERFORMANCE_DATA: "PERFORMANCE_DATA",
+}
+
+func AddPrefix(pf *registry.Key, k string) (string, error) {
+	if pstr, ok := ConstPrefixMap[*pf]; ok {
+		return fmt.Sprintf(`HKEY_%s\%s`, pstr, k), nil
+	}
+	return "", errors.New("Prefix did not match any.")
+}
+
 func FuzzyRegKey(inkey string) (*registry.Key, string, error) {
 	inkey = strings.Trim(inkey, "\n\r \t")
 	inkey = strings.TrimPrefix(inkey, "Computer")
-	inkey = strings.TrimPrefix(inkey, `\`)
-	prekey, key, err := AttemptPrefix(inkey)
+	prekey, key, err := SplitKeyPrefix(inkey)
 	if err != nil {
 		return nil, key, err
 	}
-	key, err = LocateFirstValid(prekey, key)
+	key, err = TransverseUntilRealKey(prekey, key)
 	if err != nil {
 
 		return nil, key, err
@@ -26,27 +55,22 @@ func FuzzyRegKey(inkey string) (*registry.Key, string, error) {
 	return prekey, key, nil
 }
 
-func AttemptPrefix(str string) (*registry.Key, string, error) {
-	//TODO check length
+func SplitKeyPrefix(str string) (*registry.Key, string, error) {
+	str = strings.TrimPrefix(str, `\`)
 	parts := strings.Split(str, `\`)
 	keystart, therestparts := parts[0], parts[1:]
 	therest := strings.Join(therestparts, `\`)
 	keystart = strings.ToUpper(keystart)
-	log.Printf(`
-	parts: %v
-	keystart: %s
-	therest: %s
-	`, parts, keystart, therest)
 
 	ignore_start := 0
-	for _, pre := range []string{"HKEY", "HK"} {
-		if len(keystart) <= len(pre) {
+	for _, prefx := range []string{"HKEY", "HK"} {
+		if len(keystart) <= len(prefx) {
 			break
 		}
-		if strings.HasPrefix(keystart, pre) {
-			ignore_start = len(pre)
-			if string(keystart[len(pre)]) == "_" {
-				if len(keystart) > len(pre)+1 {
+		if strings.HasPrefix(keystart, prefx) {
+			ignore_start = len(prefx)
+			if string(keystart[len(prefx)]) == "_" {
+				if len(keystart) > len(prefx)+1 {
 					ignore_start += 1
 				}
 			}
@@ -55,34 +79,15 @@ func AttemptPrefix(str string) (*registry.Key, string, error) {
 	}
 	reduced_keystart := keystart[ignore_start:]
 
-	log.Printf(`
-	keystart: %v [%v]
-	reduced_keystart: %v
-	`, keystart, ignore_start, reduced_keystart)
-
-	kmap := map[string]registry.Key{
-		"CLASSES_ROOT":     registry.CLASSES_ROOT,
-		"CURRENT_USER":     registry.CURRENT_USER,
-		"LOCAL_MACHINE":    registry.LOCAL_MACHINE,
-		"USERS":            registry.USERS,
-		"CURRENT_CONFIG":   registry.CURRENT_CONFIG,
-		"PERFORMANCE_DATA": registry.PERFORMANCE_DATA,
-		"CR":               registry.CLASSES_ROOT,
-		"CU":               registry.CURRENT_USER,
-		"LM":               registry.LOCAL_MACHINE,
-		"U":                registry.USERS,
-		"CC":               registry.CURRENT_CONFIG,
-	}
-	for k, v := range kmap {
+	for k, v := range PrefixConstMap {
 		if strings.HasPrefix(reduced_keystart, k) {
 			return &v, therest, nil
 		}
 	}
-	return nil, "", errors.New("Failed to map RegKey Prefix")
+	return nil, "", errors.New("Failed to map Registry Prefix \"" + keystart + `"`)
 }
 
-func LocateFirstValid(hkpfx *registry.Key, startKey string) (string, error) {
-
+func TransverseUntilRealKey(hkpfx *registry.Key, startKey string) (string, error) {
 	nextKey := startKey
 	// lastKey := ""
 	for {

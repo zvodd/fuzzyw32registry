@@ -27,14 +27,25 @@ func TestFuzzyRegKey(t *testing.T) {
 		`HK_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion`,
 		`HKLOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion`,
 		`HK_LM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`,
-
-		// `Computer\HK_CU\Printers\Settings\Wizard`,
-		// `Computer\HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\NlaSvc\Parameters\Internet`
 	}
 
 	for i, test := range tests {
 		_, res, err := FuzzyRegKey(test)
-		t.Logf("Test %d -> \"%s\"\n %s %s", i, test, pad(len(strconv.FormatInt(int64(i), 10))), res)
+		t.Logf("Test %d ->\n \"%s\"\n %s %s", i, test, pad(len(strconv.FormatInt(int64(i), 10))), res)
+		if err != nil {
+			t.Logf("Failed with err:\n%s\n-----------\n", err)
+		}
+	}
+}
+func TestFuzzy2(t *testing.T) {
+	tests := []string{
+		`Computer\HKEY_CURRENT_USER\Microsoft\Windows`,
+		`Computer\HK_CU\Printers\Settings\Wizard`,
+		`Computer\HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\NlaSvc\Parameters\Internet`,
+	}
+	for i, test := range tests {
+		_, res, err := FuzzyRegKey(test)
+		t.Logf("Test %d ->\n \"%s\"\n %s %s", i, test, pad(len(strconv.FormatInt(int64(i), 10))), res)
 		if err != nil {
 			t.Logf("Failed with err:\n%s\n-----------\n", err)
 		}
